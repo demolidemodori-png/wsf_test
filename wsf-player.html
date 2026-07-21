@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #fff;
+    width: 500px;
+    height: 800px;
+    overflow: hidden;
+    font-family: sans-serif;
+  }
+
+  #container {
+    width: 500px;
+    height: 800px;
+    position: relative;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  #video-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  #scroll-zone {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: scroll;
+    z-index: 10;
+    /* invisible scroll zone */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  #scroll-zone::-webkit-scrollbar { display: none; }
+
+  #scroll-inner {
+    height: 3000px; /* tall enough to scroll */
+    width: 100%;
+  }
+
+  #status {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #999;
+    pointer-events: none;
+    z-index: 20;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="video-wrap">
+    <video id="player" preload="auto" playsinline muted></video>
+  </div>
+
+  <!-- invisible hover+scroll zone -->
+  <div id="scroll-zone">
+    <div id="scroll-inner"></div>
+  </div>
+
+  <div id="status">scroll to play</div>
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────
+const VIDEOS = [
+  {
+    url: 'https://freight.cargo.site/t/original/i/G3045581442684449421394077856682/wsf1.1.mp4',
+    mode: 'step' // 'step' = scroll triggers playthrough, 'scrub' = scroll controls position
+  }
+  // 今後追加:
+  // { url: 'wsf1.2.mp4', mode: 'step' },
+  // { url: 'wsf1.s.mp4', mode: 'scrub' },
+  // { url: 'wsf2.1.mp4', mode: 'step' },
+];
+
+const STEP_SCROLL_THRESHOLD = 60;  // px of scroll needed to trigger step play
+const SCRUB_SENSITIVITY     = 0.5; // scroll px per video second in scrub mode
+
+// ─── STATE ────────────────────────────────────────────────
+let currentIndex   = 0;
+let isPlaying      = false;
+let finished       = false; // current video finished playing
+let lastScrollTop  = 1000;  // start mid-scroll so both directions work
+let accumulated    = 0;     // accumulated scroll delta for step trigger
+let inHoverZone    = false;
+
+const player    = document.getElementById('player');
+const scrollZone = document.getElementById('scroll-zone');
+const statusEl  = document.getElementById('status');
+
+// ─── LOAD VIDEO ───────────────────────────────────────────
+function loadVideo(index) {
+  if (index >= VIDEOS.length) {
+    showEnd();
+    return;
+  }
+  currentIndex = index;
+  finished     = false;
+  isPlaying    = false;
+  accumulated  = 0;
+
+  const v = VIDEOS[index];
+  player.src = v.url;
+  player.load();
+  player.currentTime = 0;
+
+  if (v.mode === 'step') {
+    statusEl.textContent = 'scroll to play';
+  } else {
+    statusEl.textContent = 'scroll to scrub';
+  }
+}
+
+// ─── STEP MODE: play through on scroll ────────────────────
+function triggerStepPlay() {
+  if (isPlaying || finished) return;
+  isPlaying = true;
+  statusEl.textContent = '▶';
+  player.play();
+}
+
+player.addEventListener('ended', () => {
+  isPlaying = false;
+  finished  = true;
+  statusEl.textContent = '↓ scroll to continue';
+});
+
+// ─── SCROLL HANDLER ───────────────────────────────────────
+scrollZone.scrollTop = lastScrollTop;
+
+scrollZone.addEventListener('scroll', () => {
+  const st    = scrollZone.scrollTop;
+  const delta = st - lastScrollTop;
+  lastScrollTop = st;
+
+  // keep scroll mid-range so we never hit top/bottom
+  if (st < 200 || st > 2800) {
+    scrollZone.scrollTop = 1000;
+    lastScrollTop = 1000;
+    return;
+  }
+
+  const v = VIDEOS[currentIndex];
+
+  if (v.mode === 'step') {
+    handleStep(delta);
+  } else {
+    handleScrub(delta);
+  }
+});
+
+function handleStep(delta) {
+  if (delta <= 0) return; // only forward scroll triggers step
+
+  if (!finished) {
+    // accumulate scroll to trigger play
+    accumulated += delta;
+    if (accumulated >= STEP_SCROLL_THRESHOLD) {
+      accumulated = 0;
+      triggerStepPlay();
+    }
+  } else {
+    // video finished: advance to next on scroll
+    accumulated += delta;
+    if (accumulated >= STEP_SCROLL_THRESHOLD) {
+      accumulated = 0;
+      loadVideo(currentIndex + 1);
+    }
+  }
+}
+
+function handleScrub(delta) {
+  if (isNaN(player.duration)) return;
+  const seekAmount = delta * SCRUB_SENSITIVITY / 100;
+  player.currentTime = Math.max(0, Math.min(player.duration, player.currentTime + seekAmount));
+  statusEl.textContent = Math.round((player.currentTime / player.duration) * 100) + '%';
+
+  // advance out of scrub mode when reaching end or beginning
+  if (delta > 0 && player.currentTime >= player.duration - 0.1) {
+    loadVideo(currentIndex + 1);
+  }
+}
+
+// ─── END SCREEN ───────────────────────────────────────────
+function showEnd() {
+  statusEl.textContent = '';
+  // could add a restart button here
+  const btn = document.createElement('button');
+  btn.textContent = 'もう一度見る';
+  btn.style.cssText = `
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    padding: 10px 24px;
+    background: #000;
+    color: #fff;
+    border: none;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+  `;
+  btn.addEventListener('click', () => {
+    btn.remove();
+    loadVideo(0);
+  });
+  document.getElementById('container').appendChild(btn);
+}
+
+// ─── INIT ─────────────────────────────────────────────────
+loadVideo(0);
+</script>
+</body>
+</html>
