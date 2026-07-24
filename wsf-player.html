@@ -6,16 +6,16 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body {
-    background: #fff;
-    width: 800px;
-    height: 500px;
+  html, body {
+    width: 100%;
+    height: 100%;
     overflow: hidden;
+    background: #fff;
   }
 
   #container {
-    width: 800px;
-    height: 500px;
+    width: 100%;
+    height: 100%;
     position: relative;
     background: #fff;
     overflow: hidden;
@@ -76,7 +76,6 @@
     <div id="scroll-inner"></div>
   </div>
 
-  <!-- click to restart, only visible when finished -->
   <div id="click-zone"></div>
 </div>
 
@@ -97,7 +96,7 @@ let finished      = false;
 let lastScrollTop = 1000;
 let accumulated   = 0;
 
-const player    = document.getElementById('player');
+const player     = document.getElementById('player');
 const scrollZone = document.getElementById('scroll-zone');
 const clickZone  = document.getElementById('click-zone');
 
@@ -127,12 +126,12 @@ function triggerStepPlay() {
 player.addEventListener('ended', () => {
   isPlaying = false;
   finished  = true;
-  // show click zone so user can click to advance or restart
   clickZone.style.display = 'block';
 });
 
 scrollZone.scrollTop = lastScrollTop;
 
+// スクロール（PC）
 scrollZone.addEventListener('scroll', () => {
   const st    = scrollZone.scrollTop;
   const delta = st - lastScrollTop;
@@ -151,6 +150,24 @@ scrollZone.addEventListener('scroll', () => {
     handleScrub(delta);
   }
 });
+
+// タッチ（モバイル）
+let touchStartY = 0;
+scrollZone.addEventListener('touchstart', (e) => {
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+scrollZone.addEventListener('touchmove', (e) => {
+  const delta = touchStartY - e.touches[0].clientY;
+  touchStartY = e.touches[0].clientY;
+
+  const v = VIDEOS[currentIndex];
+  if (v.mode === 'step') {
+    handleStep(delta);
+  } else {
+    handleScrub(delta);
+  }
+}, { passive: true });
 
 function handleStep(delta) {
   if (delta <= 0) return;
@@ -184,7 +201,6 @@ function showEnd() {
   clickZone.style.display = 'block';
 }
 
-// クリックで次へ、または最後なら最初に戻る
 clickZone.addEventListener('click', () => {
   clickZone.style.display = 'none';
   const next = currentIndex + 1;
